@@ -1,0 +1,28 @@
+# 二进制
+mcpguard
+/mcpguard
+
+# 测试
+*.test
+*.out
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 环境变量
+.env
+.env.local
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 前端构建产物
+web/dist/
+web/node_modules/
