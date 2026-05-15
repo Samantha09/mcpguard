@@ -24,14 +24,14 @@ const (
 type MCPRequestMethod string
 
 const (
-	MethodInitialize      MCPRequestMethod = "initialize"
-	MethodToolsList       MCPRequestMethod = "tools/list"
-	MethodToolsCall       MCPRequestMethod = "tools/call"
-	MethodResourcesList   MCPRequestMethod = "resources/list"
-	MethodResourcesRead   MCPRequestMethod = "resources/read"
-	MethodPromptsList     MCPRequestMethod = "prompts/list"
-	MethodPromptsGet      MCPRequestMethod = "prompts/get"
-	MethodNotification    MCPRequestMethod = "notifications/*"
+	MethodInitialize    MCPRequestMethod = "initialize"
+	MethodToolsList     MCPRequestMethod = "tools/list"
+	MethodToolsCall     MCPRequestMethod = "tools/call"
+	MethodResourcesList MCPRequestMethod = "resources/list"
+	MethodResourcesRead MCPRequestMethod = "resources/read"
+	MethodPromptsList   MCPRequestMethod = "prompts/list"
+	MethodPromptsGet    MCPRequestMethod = "prompts/get"
+	MethodNotification  MCPRequestMethod = "notifications/*"
 )
 
 // ToolCallInfo 工具调用信息（从 tools/call 请求中提取）
@@ -50,17 +50,17 @@ type DetectResult struct {
 
 // InterceptedRequest 被拦截的请求（用于检测流水线输入）
 type InterceptedRequest struct {
-	ID     any             `json:"id"`
+	ID     any              `json:"id"`
 	Method MCPRequestMethod `json:"method"`
-	Params map[string]any  `json:"params"`
+	Params map[string]any   `json:"params"`
 	// 如果是 tools/call，解析后的工具信息
 	ToolCall *ToolCallInfo `json:"tool_call,omitempty"`
 }
 
 // InterceptedResponse 被拦截的响应
 type InterceptedResponse struct {
-	ID     any    `json:"id"`
-	Result any    `json:"result,omitempty"`
+	ID     any       `json:"id"`
+	Result any       `json:"result,omitempty"`
 	Error  *RPCError `json:"error,omitempty"`
 }
 
@@ -77,7 +77,7 @@ type Policy struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Enabled     bool     `json:"enabled"`
-	RuleIDs     []string `json:"rule_ids"`  // 关联的规则 ID
+	RuleIDs     []string `json:"rule_ids"`    // 关联的规则 ID
 	LLMEnabled  bool     `json:"llm_enabled"` // 是否启用 LLM 检测
 }
 
@@ -90,9 +90,11 @@ type LogEntry struct {
 	ToolName  string    `json:"tool_name,omitempty"`
 	Action    Action    `json:"action"`
 	Reason    string    `json:"reason,omitempty"`
-	Request   string    `json:"request"`  // 原始 JSON
+	Request   string    `json:"request"`            // 原始 JSON
 	Response  string    `json:"response,omitempty"` // 原始 JSON
 	ClientID  string    `json:"client_id,omitempty"`
+	Detector  string    `json:"detector,omitempty"` // 触发检测的检测器名称
+	RuleID    string    `json:"rule_id,omitempty"`  // 触发检测的规则 ID
 }
 
 // ServerConfig 上游 MCP Server 配置
