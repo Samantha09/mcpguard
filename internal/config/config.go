@@ -25,8 +25,8 @@ type AppConfig struct {
 
 // LLMConfig LLM 检测配置
 type LLMConfig struct {
-	Enabled bool            `json:"enabled"`
-	Backend string          `json:"backend"` // "openai" | "ollama" | ...
+	Enabled bool             `json:"enabled"`
+	Backend string           `json:"backend"` // "openai" | "ollama" | ...
 	OpenAI  llm.OpenAIConfig `json:"openai"`
 }
 

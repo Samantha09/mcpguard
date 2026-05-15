@@ -2,8 +2,12 @@
 package api
 
 import (
-	"github.com/gin-gonic/gin"
+	"net/http"
+	"strconv"
+
+	"github.com/Samantha09/mcpguard/internal/models"
 	"github.com/Samantha09/mcpguard/internal/store"
+	"github.com/gin-gonic/gin"
 )
 
 // Server API 服务
@@ -65,13 +69,47 @@ func (s *Server) Run(addr string) error {
 
 // 路由处理函数 — 后续实现
 
-func (s *Server) handleHealth(c *gin.Context)           {}
-func (s *Server) handleListLogs(c *gin.Context)         {}
-func (s *Server) handleListPolicies(c *gin.Context)     {}
-func (s *Server) handleCreatePolicy(c *gin.Context)     {}
-func (s *Server) handleGetPolicy(c *gin.Context)        {}
-func (s *Server) handleUpdatePolicy(c *gin.Context)     {}
-func (s *Server) handleDeletePolicy(c *gin.Context)     {}
-func (s *Server) handleListRules(c *gin.Context)        {}
-func (s *Server) handleCreateRule(c *gin.Context)       {}
-func (s *Server) handleReportSummary(c *gin.Context)    {}
+func (s *Server) handleHealth(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (s *Server) handleListLogs(c *gin.Context) {
+	filter := store.LogFilter{}
+
+	if action := c.Query("action"); action != "" {
+		a := models.Action(action)
+		filter.Action = &a
+	}
+	if method := c.Query("method"); method != "" {
+		filter.Method = method
+	}
+	if toolName := c.Query("tool_name"); toolName != "" {
+		filter.ToolName = toolName
+	}
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil {
+			filter.Limit = n
+		}
+	}
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if n, err := strconv.Atoi(offsetStr); err == nil {
+			filter.Offset = n
+		}
+	}
+
+	logs, err := s.store.QueryLogs(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}
+
+func (s *Server) handleListPolicies(c *gin.Context)  {}
+func (s *Server) handleCreatePolicy(c *gin.Context)  {}
+func (s *Server) handleGetPolicy(c *gin.Context)     {}
+func (s *Server) handleUpdatePolicy(c *gin.Context)  {}
+func (s *Server) handleDeletePolicy(c *gin.Context)  {}
+func (s *Server) handleListRules(c *gin.Context)     {}
+func (s *Server) handleCreateRule(c *gin.Context)    {}
+func (s *Server) handleReportSummary(c *gin.Context) {}

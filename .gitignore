@@ -1,6 +1,6 @@
 # 二进制
-mcpguard
 /mcpguard
+*.exe
 
 # 测试
 *.test
