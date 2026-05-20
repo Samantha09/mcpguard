@@ -12,6 +12,7 @@ import (
 
 	"github.com/Samantha09/mcpguard/internal/detector"
 	"github.com/Samantha09/mcpguard/internal/models"
+	"github.com/Samantha09/mcpguard/internal/probe"
 	"github.com/Samantha09/mcpguard/internal/store"
 	"github.com/Samantha09/mcpguard/pkg/jsonrpc"
 )
@@ -33,9 +34,11 @@ type Config struct {
 
 // MCProxy MCP 代理实现
 type MCProxy struct {
-	config   Config
-	pipeline *detector.Pipeline
-	store    store.Store
+	config      Config
+	pipeline    *detector.Pipeline
+	store       store.Store
+	probeClient *probe.Client // 探针客户端（可选）
+	probeID     string        // 探针 ID
 
 	// 运行时，测试中可注入
 	agentIn   io.Reader
@@ -46,12 +49,17 @@ type MCProxy struct {
 }
 
 // New 创建 MCP 代理
-func New(cfg Config, pipeline *detector.Pipeline, s store.Store) *MCProxy {
-	return &MCProxy{
-		config:   cfg,
-		pipeline: pipeline,
-		store:    s,
+func New(cfg Config, pipeline *detector.Pipeline, s store.Store, pc *probe.Client) *MCProxy {
+	p := &MCProxy{
+		config:      cfg,
+		pipeline:    pipeline,
+		store:       s,
+		probeClient: pc,
 	}
+	if pc != nil {
+		p.probeID = pc.ProbeID()
+	}
+	return p
 }
 
 func (p *MCProxy) Start(ctx context.Context) error {
@@ -206,12 +214,20 @@ func (p *MCProxy) logRequest(raw string, req *models.InterceptedRequest, result 
 		Reason:    result.Reason,
 		Request:   raw,
 		Detector:  result.Detector,
+		ProbeID:   p.probeID,
 	}
 	if req.ToolCall != nil {
 		entry.ToolName = req.ToolCall.Name
 	}
 	if err := p.store.InsertLog(context.Background(), entry); err != nil {
 		// 日志写入失败不应阻断请求
+	}
+
+	// 上报到平台（异步，不阻塞）
+	if p.probeClient != nil {
+		go func() {
+			_ = p.probeClient.SendLog(entry)
+		}()
 	}
 }
 

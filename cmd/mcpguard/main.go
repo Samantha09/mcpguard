@@ -16,6 +16,8 @@ import (
 	"github.com/Samantha09/mcpguard/internal/detector"
 	"github.com/Samantha09/mcpguard/internal/logger"
 	"github.com/Samantha09/mcpguard/internal/models"
+	"github.com/Samantha09/mcpguard/internal/platform"
+	"github.com/Samantha09/mcpguard/internal/probe"
 	"github.com/Samantha09/mcpguard/internal/proxy"
 	"github.com/Samantha09/mcpguard/internal/rules"
 	"github.com/Samantha09/mcpguard/internal/store"
@@ -31,6 +33,11 @@ func main() {
 				fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 				os.Exit(1)
 			}
+		case "platform":
+			if err := runPlatform(); err != nil {
+				fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+				os.Exit(1)
+			}
 		case "version", "--version":
 			fmt.Printf("mcpguard v%s\n", version)
 		default:
@@ -41,15 +48,40 @@ func main() {
 	}
 }
 
+func runPlatform() error {
+	var (
+		dbPath   = flag.String("db", "mcpguard.db", "SQLite 数据库路径")
+		listen   = flag.String("listen", ":8080", "监听地址")
+		logLevel = flag.String("log-level", "info", "日志级别")
+	)
+	flag.CommandLine.Parse(os.Args[2:])
+
+	logger.Setup(logger.Config{Level: *logLevel})
+
+	s := store.NewSQLiteStore(*dbPath)
+	if err := s.Init(context.Background()); err != nil {
+		return fmt.Errorf("初始化数据库失败: %w", err)
+	}
+	defer s.Close()
+
+	plat := platform.NewServer(s)
+	fmt.Printf("平台服务启动于 %s\n", *listen)
+	return plat.Run(*listen)
+}
+
 func runServe() error {
 	// CLI flags
 	var (
-		command  = flag.String("command", "", "MCP Server 启动命令（必填）")
-		argsStr  = flag.String("args", "", "MCP Server 命令参数（逗号分隔）")
-		dbPath   = flag.String("db", "mcpguard.db", "SQLite 数据库路径")
-		apiAddr  = flag.String("api-addr", ":9090", "API 监听地址")
-		noAPI    = flag.Bool("no-api", false, "禁用 HTTP API")
-		logLevel = flag.String("log-level", "info", "日志级别: debug/info/warn/error")
+		command      = flag.String("command", "", "MCP Server 启动命令（必填）")
+		argsStr      = flag.String("args", "", "MCP Server 命令参数（逗号分隔）")
+		dbPath       = flag.String("db", "mcpguard.db", "SQLite 数据库路径")
+		apiAddr      = flag.String("api-addr", ":9090", "API 监听地址")
+		noAPI        = flag.Bool("no-api", false, "禁用 HTTP API")
+		logLevel     = flag.String("log-level", "info", "日志级别: debug/info/warn/error")
+		platformAddr = flag.String("platform-addr", "", "平台地址（如 http://localhost:8080）")
+		token        = flag.String("token", "", "探针认证 token")
+		register     = flag.Bool("register", false, "首次注册模式（获取 token 后退出）")
+		probeName    = flag.String("probe-name", "", "探针名称（默认 hostname）")
 	)
 	flag.CommandLine.Parse(os.Args[2:])
 
@@ -63,6 +95,9 @@ func runServe() error {
 	cfg.DBPath = *dbPath
 	cfg.API.Enabled = !*noAPI
 	cfg.API.Listen = *apiAddr
+	cfg.Probe.PlatformAddr = *platformAddr
+	cfg.Probe.Token = *token
+	cfg.Probe.ProbeName = *probeName
 
 	var args []string
 	if *argsStr != "" {
@@ -87,11 +122,34 @@ func runServe() error {
 	}
 	defer s.Close()
 
+	// 探针客户端
+	var probeClient *probe.Client
+	if cfg.Probe.PlatformAddr != "" {
+		probeClient = probe.NewClient(cfg.Probe.PlatformAddr, cfg.Probe.Token)
+		if *register {
+			name := cfg.Probe.ProbeName
+			if name == "" {
+				name, _ = os.Hostname()
+				if name == "" {
+					name = "unnamed"
+				}
+			}
+			_, newToken, err := probeClient.Register(context.Background(), name, "", "")
+			if err != nil {
+				return fmt.Errorf("探针注册失败: %w", err)
+			}
+			fmt.Printf("探针注册成功，token: %s\n", newToken)
+			return nil
+		}
+		// 拉取平台规则
+		_, _ = probeClient.PullRules(context.Background())
+	}
+
 	// 构建检测流水线（内置规则）
 	pipeline := detector.NewPipeline(rules.NewRuleDetector(rules.BuiltInRules()))
 
 	// 创建代理
-	pxy := proxy.New(cfg.Proxy, pipeline, s)
+	pxy := proxy.New(cfg.Proxy, pipeline, s, probeClient)
 
 	// 启动 API 服务（异步）
 	if cfg.API.Enabled {
@@ -120,14 +178,24 @@ func runServe() error {
 func printUsage() {
 	fmt.Printf("mcpguard v%s — MCP 安全护栏\n\n", version)
 	fmt.Println("用法:")
-	fmt.Println("  mcpguard serve [flags]  启动 MCPGuard 服务")
-	fmt.Println("  mcpguard version        显示版本号")
+	fmt.Println("  mcpguard serve [flags]     启动 MCPGuard 探针服务")
+	fmt.Println("  mcpguard platform [flags]  启动 MCPGuard 平台服务")
+	fmt.Println("  mcpguard version           显示版本号")
 	fmt.Println()
 	fmt.Println("serve 参数:")
-	fmt.Println("  --command string    MCP Server 启动命令（必填）")
-	fmt.Println("  --args string       命令参数（逗号分隔，如 \"-y,@server\"）")
-	fmt.Println("  --db string         SQLite 数据库路径（默认 mcpguard.db）")
-	fmt.Println("  --api-addr string   API 监听地址（默认 :9090）")
-	fmt.Println("  --no-api            禁用 HTTP API")
-	fmt.Println("  --log-level string  日志级别（默认 info）")
+	fmt.Println("  --command string       MCP Server 启动命令（必填）")
+	fmt.Println("  --args string          命令参数（逗号分隔，如 \"-y,@server\"）")
+	fmt.Println("  --db string            SQLite 数据库路径（默认 mcpguard.db）")
+	fmt.Println("  --api-addr string      API 监听地址（默认 :9090）")
+	fmt.Println("  --no-api               禁用 HTTP API")
+	fmt.Println("  --log-level string     日志级别（默认 info）")
+	fmt.Println("  --platform-addr string 平台地址（如 http://localhost:8080）")
+	fmt.Println("  --token string         探针认证 token")
+	fmt.Println("  --register             首次注册模式（获取 token 后退出）")
+	fmt.Println("  --probe-name string    探针名称（默认 hostname）")
+	fmt.Println()
+	fmt.Println("platform 参数:")
+	fmt.Println("  --db string            SQLite 数据库路径（默认 mcpguard.db）")
+	fmt.Println("  --listen string        监听地址（默认 :8080）")
+	fmt.Println("  --log-level string     日志级别（默认 info）")
 }

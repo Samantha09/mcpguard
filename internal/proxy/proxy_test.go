@@ -27,12 +27,13 @@ func newTestProxy(t *testing.T, ruleList []rules.Rule, agentReq, serverResp stri
 	serverOut := io.NopCloser(bytes.NewBufferString(serverResp))
 
 	p := &MCProxy{
-		pipeline:  detector.NewPipeline(rules.NewRuleDetector(ruleList)),
-		store:     s,
-		agentIn:   agentIn,
-		agentOut:  agentOut,
-		serverIn:  serverIn,
-		serverOut: serverOut,
+		pipeline:    detector.NewPipeline(rules.NewRuleDetector(ruleList)),
+		store:       s,
+		probeClient: nil,
+		agentIn:     agentIn,
+		agentOut:    agentOut,
+		serverIn:    serverIn,
+		serverOut:   serverOut,
 	}
 
 	return p, agentOut, serverIn
