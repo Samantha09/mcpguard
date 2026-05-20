@@ -2,9 +2,11 @@
 package platform
 
 import (
+	_ "embed"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Samantha09/mcpguard/internal/models"
@@ -12,6 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+//go:embed index.html
+var indexHTML string
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -37,9 +42,32 @@ func NewServer(s store.Store) *Server {
 func (s *Server) setupRoutes() {
 	r := gin.Default()
 
+	// Web UI
+	r.GET("/", func(c *gin.Context) {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusOK, indexHTML)
+	})
+
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// 简化认证（MVP：检查环境变量密码）
+	r.POST("/api/v1/auth", func(c *gin.Context) {
+		var req struct {
+			Password string `json:"password"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		adminPass := os.Getenv("MCPGUARD_ADMIN_PASSWORD")
+		if adminPass == "" || req.Password == adminPass {
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid password"})
+		}
 	})
 
 	// 探针 API（探针调用）
