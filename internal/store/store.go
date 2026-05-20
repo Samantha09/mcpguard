@@ -23,6 +23,20 @@ type Store interface {
 	InsertLog(ctx context.Context, entry *models.LogEntry) error
 	QueryLogs(ctx context.Context, filter LogFilter) ([]*models.LogEntry, error)
 
+	// 探针操作
+	RegisterProbe(ctx context.Context, probe *models.Probe, tokenHash string) error
+	GetProbe(ctx context.Context, id string) (*models.Probe, error)
+	ListProbes(ctx context.Context) ([]*models.Probe, error)
+	UpdateProbeHeartbeat(ctx context.Context, id string) error
+	UpdateProbeStatus(ctx context.Context, id string, status string) error
+
+	// 规则操作
+	CreateRule(ctx context.Context, rule *models.Rule) error
+	GetRule(ctx context.Context, id string) (*models.Rule, error)
+	ListRules(ctx context.Context) ([]*models.Rule, error)
+	UpdateRule(ctx context.Context, rule *models.Rule) error
+	DeleteRule(ctx context.Context, id string) error
+
 	// 策略操作
 	UpsertPolicy(ctx context.Context, policy *models.Policy) error
 	GetPolicy(ctx context.Context, id string) (*models.Policy, error)
@@ -71,6 +85,7 @@ CREATE TABLE IF NOT EXISTS logs (
 	request TEXT NOT NULL,
 	response TEXT,
 	client_id TEXT,
+	probe_id TEXT,
 	detector TEXT,
 	rule_id TEXT
 );
@@ -78,6 +93,32 @@ CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_logs_action ON logs(action);
 CREATE INDEX IF NOT EXISTS idx_logs_method ON logs(method);
 CREATE INDEX IF NOT EXISTS idx_logs_tool_name ON logs(tool_name);
+CREATE INDEX IF NOT EXISTS idx_logs_probe_id ON logs(probe_id);
+
+CREATE TABLE IF NOT EXISTS probes (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	token_hash TEXT NOT NULL,
+	hostname TEXT,
+	ip TEXT,
+	status TEXT DEFAULT 'offline',
+	last_heartbeat DATETIME,
+	registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	metadata TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rules (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	type TEXT NOT NULL CHECK(type IN ('keyword', 'tool_name', 'regex', 'file_path')),
+	pattern TEXT NOT NULL,
+	action TEXT NOT NULL CHECK(action IN ('allow', 'block', 'warn')),
+	enabled BOOLEAN DEFAULT TRUE,
+	description TEXT,
+	version INTEGER DEFAULT 1,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("创建表失败: %w", err)
@@ -98,10 +139,10 @@ func (s *SQLiteStore) InsertLog(ctx context.Context, entry *models.LogEntry) err
 		ts = time.Now()
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO logs (timestamp, direction, method, tool_name, action, reason, request, response, client_id, detector, rule_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO logs (timestamp, direction, method, tool_name, action, reason, request, response, client_id, probe_id, detector, rule_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ts, entry.Direction, entry.Method, entry.ToolName, string(entry.Action), entry.Reason,
-		entry.Request, entry.Response, entry.ClientID, entry.Detector, entry.RuleID,
+		entry.Request, entry.Response, entry.ClientID, entry.ProbeID, entry.Detector, entry.RuleID,
 	)
 	return err
 }
@@ -131,7 +172,7 @@ func (s *SQLiteStore) QueryLogs(ctx context.Context, filter LogFilter) ([]*model
 		args = append(args, filter.ToolName)
 	}
 
-	query := "SELECT id, timestamp, direction, method, tool_name, action, reason, request, response, client_id, detector, rule_id FROM logs"
+	query := "SELECT id, timestamp, direction, method, tool_name, action, reason, request, response, client_id, probe_id, detector, rule_id FROM logs"
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -157,7 +198,7 @@ func (s *SQLiteStore) QueryLogs(ctx context.Context, filter LogFilter) ([]*model
 		err := rows.Scan(
 			&e.ID, &e.Timestamp, &e.Direction, &e.Method, &e.ToolName,
 			&actionStr, &e.Reason, &e.Request, &e.Response,
-			&e.ClientID, &e.Detector, &e.RuleID,
+			&e.ClientID, &e.ProbeID, &e.Detector, &e.RuleID,
 		)
 		if err != nil {
 			return nil, err
@@ -166,6 +207,135 @@ func (s *SQLiteStore) QueryLogs(ctx context.Context, filter LogFilter) ([]*model
 		entries = append(entries, &e)
 	}
 	return entries, rows.Err()
+}
+
+// --- Probe CRUD ---
+
+func (s *SQLiteStore) RegisterProbe(ctx context.Context, probe *models.Probe, tokenHash string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO probes (id, name, token_hash, hostname, ip, status, last_heartbeat, metadata)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		probe.ID, probe.Name, tokenHash, probe.Hostname, probe.IP, probe.Status, probe.LastHeartbeat, probe.Metadata,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetProbe(ctx context.Context, id string) (*models.Probe, error) {
+	var p models.Probe
+	var lastHb sql.NullTime
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, hostname, ip, status, last_heartbeat, registered_at, metadata FROM probes WHERE id = ?`, id,
+	).Scan(&p.ID, &p.Name, &p.Hostname, &p.IP, &p.Status, &lastHb, &p.RegisteredAt, &p.Metadata)
+	if err != nil {
+		return nil, err
+	}
+	if lastHb.Valid {
+		p.LastHeartbeat = lastHb.Time
+	}
+	return &p, nil
+}
+
+func (s *SQLiteStore) ListProbes(ctx context.Context) ([]*models.Probe, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, hostname, ip, status, last_heartbeat, registered_at, metadata FROM probes ORDER BY registered_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var probes []*models.Probe
+	for rows.Next() {
+		var p models.Probe
+		var lastHb sql.NullTime
+		if err := rows.Scan(&p.ID, &p.Name, &p.Hostname, &p.IP, &p.Status, &lastHb, &p.RegisteredAt, &p.Metadata); err != nil {
+			return nil, err
+		}
+		if lastHb.Valid {
+			p.LastHeartbeat = lastHb.Time
+		}
+		probes = append(probes, &p)
+	}
+	return probes, rows.Err()
+}
+
+func (s *SQLiteStore) UpdateProbeHeartbeat(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE probes SET last_heartbeat = ? WHERE id = ?`, time.Now(), id)
+	return err
+}
+
+func (s *SQLiteStore) UpdateProbeStatus(ctx context.Context, id string, status string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE probes SET status = ? WHERE id = ?`, status, id)
+	return err
+}
+
+// --- Rule CRUD ---
+
+func (s *SQLiteStore) CreateRule(ctx context.Context, rule *models.Rule) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO rules (id, name, type, pattern, action, enabled, description, version)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		rule.ID, rule.Name, rule.Type, rule.Pattern, string(rule.Action), rule.Enabled, rule.Description, rule.Version,
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetRule(ctx context.Context, id string) (*models.Rule, error) {
+	var r models.Rule
+	var createdAt, updatedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, type, pattern, action, enabled, description, version, created_at, updated_at FROM rules WHERE id = ?`, id,
+	).Scan(&r.ID, &r.Name, &r.Type, &r.Pattern, &r.Action, &r.Enabled, &r.Description, &r.Version, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if createdAt.Valid {
+		r.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		r.UpdatedAt = updatedAt.Time
+	}
+	return &r, nil
+}
+
+func (s *SQLiteStore) ListRules(ctx context.Context) ([]*models.Rule, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, type, pattern, action, enabled, description, version, created_at, updated_at FROM rules ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []*models.Rule
+	for rows.Next() {
+		var r models.Rule
+		var createdAt, updatedAt sql.NullTime
+		if err := rows.Scan(&r.ID, &r.Name, &r.Type, &r.Pattern, &r.Action, &r.Enabled, &r.Description, &r.Version, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		if createdAt.Valid {
+			r.CreatedAt = createdAt.Time
+		}
+		if updatedAt.Valid {
+			r.UpdatedAt = updatedAt.Time
+		}
+		rules = append(rules, &r)
+	}
+	return rules, rows.Err()
+}
+
+func (s *SQLiteStore) UpdateRule(ctx context.Context, rule *models.Rule) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE rules SET name = ?, type = ?, pattern = ?, action = ?, enabled = ?, description = ?, version = ?, updated_at = ? WHERE id = ?`,
+		rule.Name, rule.Type, rule.Pattern, string(rule.Action), rule.Enabled, rule.Description, rule.Version, time.Now(), rule.ID,
+	)
+	return err
+}
+
+func (s *SQLiteStore) DeleteRule(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM rules WHERE id = ?`, id)
+	return err
 }
 
 func (s *SQLiteStore) UpsertPolicy(ctx context.Context, policy *models.Policy) error {

@@ -206,3 +206,120 @@ func TestSQLiteStore_QueryEmptyReturnsEmpty(t *testing.T) {
 		t.Fatalf("expected 0 logs, got %d", len(logs))
 	}
 }
+
+// --- Probe Tests ---
+
+func TestSQLiteStore_RegisterAndGetProbe(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	probe := &models.Probe{
+		ID:       "probe-1",
+		Name:     "test-probe",
+		Hostname: "localhost",
+		IP:       "127.0.0.1",
+		Status:   "online",
+	}
+	if err := s.RegisterProbe(context.Background(), probe, "hash123"); err != nil {
+		t.Fatalf("register probe failed: %v", err)
+	}
+
+	got, err := s.GetProbe(context.Background(), "probe-1")
+	if err != nil {
+		t.Fatalf("get probe failed: %v", err)
+	}
+	if got.Name != "test-probe" {
+		t.Fatalf("expected name test-probe, got %s", got.Name)
+	}
+}
+
+func TestSQLiteStore_ListProbes(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.RegisterProbe(context.Background(), &models.Probe{ID: "p1", Name: "a"}, "h1")
+	_ = s.RegisterProbe(context.Background(), &models.Probe{ID: "p2", Name: "b"}, "h2")
+
+	probes, err := s.ListProbes(context.Background())
+	if err != nil {
+		t.Fatalf("list probes failed: %v", err)
+	}
+	if len(probes) != 2 {
+		t.Fatalf("expected 2 probes, got %d", len(probes))
+	}
+}
+
+func TestSQLiteStore_UpdateProbeStatus(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.RegisterProbe(context.Background(), &models.Probe{ID: "p1", Name: "a", Status: "online"}, "h1")
+	_ = s.UpdateProbeStatus(context.Background(), "p1", "offline")
+
+	got, _ := s.GetProbe(context.Background(), "p1")
+	if got.Status != "offline" {
+		t.Fatalf("expected offline, got %s", got.Status)
+	}
+}
+
+// --- Rule Tests ---
+
+func TestSQLiteStore_CreateAndGetRule(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	rule := &models.Rule{
+		ID:      "r1",
+		Name:    "ban rm",
+		Type:    "keyword",
+		Pattern: "rm -rf",
+		Action:  models.ActionBlock,
+		Enabled: true,
+	}
+	if err := s.CreateRule(context.Background(), rule); err != nil {
+		t.Fatalf("create rule failed: %v", err)
+	}
+
+	got, err := s.GetRule(context.Background(), "r1")
+	if err != nil {
+		t.Fatalf("get rule failed: %v", err)
+	}
+	if got.Name != "ban rm" {
+		t.Fatalf("expected name ban rm, got %s", got.Name)
+	}
+}
+
+func TestSQLiteStore_ListRules(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.CreateRule(context.Background(), &models.Rule{ID: "r1", Name: "a", Type: "keyword", Pattern: "x", Action: models.ActionBlock})
+	_ = s.CreateRule(context.Background(), &models.Rule{ID: "r2", Name: "b", Type: "keyword", Pattern: "y", Action: models.ActionAllow})
+
+	rules, err := s.ListRules(context.Background())
+	if err != nil {
+		t.Fatalf("list rules failed: %v", err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules, got %d", len(rules))
+	}
+}
+
+func TestSQLiteStore_UpdateAndDeleteRule(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.CreateRule(context.Background(), &models.Rule{ID: "r1", Name: "old", Type: "keyword", Pattern: "x", Action: models.ActionBlock})
+	_ = s.UpdateRule(context.Background(), &models.Rule{ID: "r1", Name: "new", Type: "keyword", Pattern: "y", Action: models.ActionBlock})
+
+	got, _ := s.GetRule(context.Background(), "r1")
+	if got.Name != "new" {
+		t.Fatalf("expected new name, got %s", got.Name)
+	}
+
+	_ = s.DeleteRule(context.Background(), "r1")
+	_, err := s.GetRule(context.Background(), "r1")
+	if err == nil {
+		t.Fatal("expected error after delete")
+	}
+}
