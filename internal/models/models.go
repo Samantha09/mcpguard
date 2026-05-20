@@ -93,6 +93,7 @@ type LogEntry struct {
 	Request   string    `json:"request"`            // 原始 JSON
 	Response  string    `json:"response,omitempty"` // 原始 JSON
 	ClientID  string    `json:"client_id,omitempty"`
+	ProbeID   string    `json:"probe_id,omitempty"` // 探针 ID
 	Detector  string    `json:"detector,omitempty"` // 触发检测的检测器名称
 	RuleID    string    `json:"rule_id,omitempty"`  // 触发检测的规则 ID
 }
@@ -107,4 +108,30 @@ type ServerConfig struct {
 	Env     []string `json:"env,omitempty"`
 	// SSE 模式
 	URL string `json:"url,omitempty"`
+}
+
+// Probe 探针注册信息
+type Probe struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Hostname      string    `json:"hostname"`
+	IP            string    `json:"ip"`
+	Status        string    `json:"status"` // online / offline
+	LastHeartbeat time.Time `json:"last_heartbeat"`
+	RegisteredAt  time.Time `json:"registered_at"`
+	Metadata      string    `json:"metadata,omitempty"` // JSON
+}
+
+// Rule 规则定义（平台存储版本）
+type Rule struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"` // keyword / tool_name / regex / file_path
+	Pattern     string    `json:"pattern"`
+	Action      Action    `json:"action"` // allow / block / warn
+	Enabled     bool      `json:"enabled"`
+	Description string    `json:"description,omitempty"`
+	Version     int       `json:"version"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
