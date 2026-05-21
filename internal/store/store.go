@@ -429,6 +429,68 @@ func (s *SQLiteStore) DeletePolicy(ctx context.Context, id string) error {
 	return err
 }
 
+func (s *SQLiteStore) QueryReportSummary(ctx context.Context) (*models.ReportSummary, error) {
+	summary := &models.ReportSummary{}
+
+	// action 统计
+	rows, err := s.db.QueryContext(ctx, `SELECT action, COUNT(*) FROM logs GROUP BY action`)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var action string
+		var count int64
+		if err := rows.Scan(&action, &count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		summary.TotalRequests += count
+		switch models.Action(action) {
+		case models.ActionBlock:
+			summary.Blocked = count
+		case models.ActionWarn:
+			summary.Warned = count
+		case models.ActionAllow:
+			summary.Allowed = count
+		}
+	}
+	rows.Close()
+
+	// top blocked tools
+	toolRows, err := s.db.QueryContext(ctx,
+		`SELECT tool_name, COUNT(*) FROM logs WHERE action = 'block' AND tool_name IS NOT NULL AND tool_name != '' GROUP BY tool_name ORDER BY COUNT(*) DESC LIMIT 5`)
+	if err != nil {
+		return nil, err
+	}
+	for toolRows.Next() {
+		var tc models.ToolCount
+		if err := toolRows.Scan(&tc.ToolName, &tc.Count); err != nil {
+			toolRows.Close()
+			return nil, err
+		}
+		summary.TopBlockedTools = append(summary.TopBlockedTools, tc)
+	}
+	toolRows.Close()
+
+	// top triggered rules
+	ruleRows, err := s.db.QueryContext(ctx,
+		`SELECT rule_id, COUNT(*) FROM logs WHERE rule_id IS NOT NULL AND rule_id != '' GROUP BY rule_id ORDER BY COUNT(*) DESC LIMIT 5`)
+	if err != nil {
+		return nil, err
+	}
+	for ruleRows.Next() {
+		var rc models.RuleCount
+		if err := ruleRows.Scan(&rc.RuleID, &rc.Count); err != nil {
+			ruleRows.Close()
+			return nil, err
+		}
+		summary.TopTriggeredRules = append(summary.TopTriggeredRules, rc)
+	}
+	ruleRows.Close()
+
+	return summary, nil
+}
+
 func isUniqueConstraintError(err error) bool {
 	if err == nil {
 		return false

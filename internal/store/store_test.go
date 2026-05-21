@@ -413,3 +413,40 @@ func TestSQLiteStore_UpsertPolicy_EmptyRuleIDs(t *testing.T) {
 		t.Fatalf("expected nil RuleIDs, got %v", got.RuleIDs)
 	}
 }
+
+// --- Report Tests ---
+
+func TestSQLiteStore_QueryReportSummary(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	// 构造日志数据
+	_ = s.InsertLog(context.Background(), &models.LogEntry{Direction: "request", Method: "tools/call", ToolName: "execute_command", Action: models.ActionBlock, Reason: "规则匹配", Request: "{}", RuleID: "rule-1"})
+	_ = s.InsertLog(context.Background(), &models.LogEntry{Direction: "request", Method: "tools/call", ToolName: "execute_command", Action: models.ActionBlock, Reason: "规则匹配", Request: "{}", RuleID: "rule-1"})
+	_ = s.InsertLog(context.Background(), &models.LogEntry{Direction: "request", Method: "tools/call", ToolName: "write_file", Action: models.ActionBlock, Request: "{}", RuleID: "rule-2"})
+	_ = s.InsertLog(context.Background(), &models.LogEntry{Direction: "request", Method: "tools/call", ToolName: "read_file", Action: models.ActionWarn, Request: "{}"})
+	_ = s.InsertLog(context.Background(), &models.LogEntry{Direction: "request", Method: "tools/call", ToolName: "read_file", Action: models.ActionAllow, Request: "{}"})
+
+	summary, err := s.QueryReportSummary(context.Background())
+	if err != nil {
+		t.Fatalf("query summary failed: %v", err)
+	}
+	if summary.TotalRequests != 5 {
+		t.Fatalf("expected total 5, got %d", summary.TotalRequests)
+	}
+	if summary.Blocked != 3 {
+		t.Fatalf("expected blocked 3, got %d", summary.Blocked)
+	}
+	if summary.Warned != 1 {
+		t.Fatalf("expected warned 1, got %d", summary.Warned)
+	}
+	if summary.Allowed != 1 {
+		t.Fatalf("expected allowed 1, got %d", summary.Allowed)
+	}
+	if len(summary.TopBlockedTools) == 0 || summary.TopBlockedTools[0].ToolName != "execute_command" || summary.TopBlockedTools[0].Count != 2 {
+		t.Fatalf("unexpected top blocked tools: %+v", summary.TopBlockedTools)
+	}
+	if len(summary.TopTriggeredRules) == 0 || summary.TopTriggeredRules[0].RuleID != "rule-1" || summary.TopTriggeredRules[0].Count != 2 {
+		t.Fatalf("unexpected top triggered rules: %+v", summary.TopTriggeredRules)
+	}
+}
