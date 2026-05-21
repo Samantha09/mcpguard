@@ -124,6 +124,14 @@ func (p *MCProxy) runLoop(ctx context.Context) error {
 			return err
 		}
 
+		// 过滤回声响应：没有 method 字段的是响应，直接写回 agent
+		if isResponse(line) {
+			if _, err := p.agentOut.Write(line); err != nil {
+				return err
+			}
+			continue
+		}
+
 		resultLine, err := p.handleLine(ctx, line)
 		if err != nil {
 			return err
@@ -151,12 +159,20 @@ func (p *MCProxy) runLoop(ctx context.Context) error {
 	}
 }
 
+// isResponse 判断 JSON 行是否是响应（无 method 字段）
+func isResponse(line []byte) bool {
+	var msg struct {
+		Method string `json:"method"`
+	}
+	_ = json.Unmarshal(line, &msg)
+	return msg.Method == ""
+}
+
 // handleLine 处理单行 JSON-RPC 消息
 // 返回非 nil 表示已构造响应（拦截），返回 nil 表示需要转发给 Server
 func (p *MCProxy) handleLine(ctx context.Context, line []byte) ([]byte, error) {
 	var req jsonrpc.Request
 	if err := json.Unmarshal(line, &req); err != nil {
-		// JSON 解析失败，原样转发
 		return nil, nil
 	}
 
@@ -219,9 +235,7 @@ func (p *MCProxy) logRequest(raw string, req *models.InterceptedRequest, result 
 	if req.ToolCall != nil {
 		entry.ToolName = req.ToolCall.Name
 	}
-	if err := p.store.InsertLog(context.Background(), entry); err != nil {
-		// 日志写入失败不应阻断请求
-	}
+	_ = p.store.InsertLog(context.Background(), entry)
 
 	// 上报到平台（异步，不阻塞）
 	if p.probeClient != nil {
