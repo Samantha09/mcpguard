@@ -2,6 +2,8 @@
 package api
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -131,7 +133,11 @@ func (s *Server) handleGetPolicy(c *gin.Context) {
 	id := c.Param("id")
 	p, err := s.store.GetPolicy(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "policy not found"})
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "policy not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, p)
@@ -164,6 +170,7 @@ func (s *Server) handleDeletePolicy(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
 func (s *Server) handleListRules(c *gin.Context)     {}
 func (s *Server) handleCreateRule(c *gin.Context)    {}
 func (s *Server) handleReportSummary(c *gin.Context) {}

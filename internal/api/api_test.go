@@ -164,6 +164,13 @@ func TestHandleCreatePolicy(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", w.Code)
 	}
+	var resp models.Policy
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.ID != "p1" || resp.Name != "禁止删除" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
 }
 
 func TestHandleGetPolicy(t *testing.T) {
@@ -231,5 +238,19 @@ func TestHandleDeletePolicy(t *testing.T) {
 	_, err := s.GetPolicy(context.Background(), "p1")
 	if err == nil {
 		t.Fatal("expected policy deleted")
+	}
+}
+
+func TestHandleUpdatePolicy_IDMismatch(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"id":"p2","name":"new","enabled":true}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/api/policies/p1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
