@@ -43,6 +43,7 @@ type APIConfig struct {
 type ProbeConfig struct {
 	PlatformAddr string `json:"platform_addr"`
 	Token        string `json:"token"`
+	ProbeID      string `json:"probe_id"`
 	ProbeName    string `json:"probe_name"`
 }
 

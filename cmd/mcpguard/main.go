@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Samantha09/mcpguard/internal/api"
 	"github.com/Samantha09/mcpguard/internal/config"
@@ -80,6 +81,7 @@ func runServe() error {
 		logLevel     = flag.String("log-level", "info", "日志级别: debug/info/warn/error")
 		platformAddr = flag.String("platform-addr", "", "平台地址（如 http://localhost:8080）")
 		token        = flag.String("token", "", "探针认证 token")
+		probeID      = flag.String("probe-id", "", "探针 ID（注册后获得）")
 		register     = flag.Bool("register", false, "首次注册模式（获取 token 后退出）")
 		probeName    = flag.String("probe-name", "", "探针名称（默认 hostname）")
 	)
@@ -97,6 +99,7 @@ func runServe() error {
 	cfg.API.Listen = *apiAddr
 	cfg.Probe.PlatformAddr = *platformAddr
 	cfg.Probe.Token = *token
+	cfg.Probe.ProbeID = *probeID
 	cfg.Probe.ProbeName = *probeName
 
 	var args []string
@@ -125,7 +128,7 @@ func runServe() error {
 	// 探针客户端
 	var probeClient *probe.Client
 	if cfg.Probe.PlatformAddr != "" {
-		probeClient = probe.NewClient(cfg.Probe.PlatformAddr, cfg.Probe.Token)
+		probeClient = probe.NewClient(cfg.Probe.PlatformAddr, cfg.Probe.Token, cfg.Probe.ProbeID)
 		if *register {
 			name := cfg.Probe.ProbeName
 			if name == "" {
@@ -161,10 +164,27 @@ func runServe() error {
 		}()
 	}
 
-	// 启动代理
+	// 启动信号监听
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// 启动心跳（如果配置了平台）
+	if probeClient != nil {
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					_ = probeClient.Heartbeat(ctx)
+				}
+			}
+		}()
+	}
+
+	// 启动代理
 	if err := pxy.Start(ctx); err != nil {
 		return fmt.Errorf("代理启动失败: %w", err)
 	}

@@ -24,10 +24,11 @@ type Client struct {
 }
 
 // NewClient 创建探针客户端
-func NewClient(platformAddr, token string) *Client {
+func NewClient(platformAddr, token, probeID string) *Client {
 	return &Client{
 		platformAddr: platformAddr,
 		token:        token,
+		probeID:      probeID,
 		httpClient:   &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -147,6 +148,30 @@ func (c *Client) SendLogHTTP(entry *models.LogEntry) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("send log failed: %s", resp.Status)
+	}
+	return nil
+}
+
+// Heartbeat 向平台发送心跳
+func (c *Client) Heartbeat(ctx context.Context) error {
+	body, _ := json.Marshal(map[string]string{
+		"probe_id": c.probeID,
+	})
+	req, err := http.NewRequestWithContext(ctx, "POST",
+		c.platformAddr+"/api/v1/probes/heartbeat", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("heartbeat failed: %s", resp.Status)
 	}
 	return nil
 }

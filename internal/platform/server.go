@@ -77,6 +77,7 @@ func (s *Server) setupRoutes() {
 		v1.GET("/rules", s.handleListRules)
 		v1.GET("/rules/:id", s.handleGetRule)
 		v1.POST("/logs/batch", s.handleBatchLogs)
+		v1.POST("/probes/heartbeat", s.handleProbeHeartbeat)
 		v1.GET("/ws", s.handleWebSocket)
 	}
 
@@ -230,6 +231,23 @@ func (s *Server) handleGetProbe(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, probe)
+}
+
+func (s *Server) handleProbeHeartbeat(c *gin.Context) {
+	var req struct {
+		ProbeID string `json:"probe_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx := c.Request.Context()
+	if err := s.store.UpdateProbeHeartbeat(ctx, req.ProbeID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	_ = s.store.UpdateProbeStatus(ctx, req.ProbeID, "online")
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // --- 日志查询 ---
