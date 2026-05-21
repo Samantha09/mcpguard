@@ -46,6 +46,9 @@ type Store interface {
 	GetPolicy(ctx context.Context, id string) (*models.Policy, error)
 	ListPolicies(ctx context.Context) ([]*models.Policy, error)
 	DeletePolicy(ctx context.Context, id string) error
+
+	// 报告操作
+	QueryReportSummary(ctx context.Context) (*models.ReportSummary, error)
 }
 
 // LogFilter 日志查询过滤条件

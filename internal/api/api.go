@@ -201,4 +201,11 @@ func (s *Server) handleCreateRule(c *gin.Context) {
 	c.JSON(http.StatusCreated, r)
 }
 
-func (s *Server) handleReportSummary(c *gin.Context) {}
+func (s *Server) handleReportSummary(c *gin.Context) {
+	summary, err := s.store.QueryReportSummary(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, summary)
+}

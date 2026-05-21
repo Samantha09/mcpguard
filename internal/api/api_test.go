@@ -345,3 +345,32 @@ func TestHandleCreateRule_BadRequest(t *testing.T) {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
+
+// --- Report Tests ---
+
+func TestHandleReportSummary(t *testing.T) {
+	srv, s := newTestServer(t)
+	_ = s.InsertLog(context.Background(), &models.LogEntry{Direction: "request", Method: "tools/call", ToolName: "execute_command", Action: models.ActionBlock, Request: "{}", RuleID: "rule-1"})
+	_ = s.InsertLog(context.Background(), &models.LogEntry{Direction: "request", Method: "tools/call", ToolName: "read_file", Action: models.ActionAllow, Request: "{}"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/reports/summary", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var summary models.ReportSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &summary); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if summary.TotalRequests != 2 {
+		t.Fatalf("expected total 2, got %d", summary.TotalRequests)
+	}
+	if summary.Blocked != 1 {
+		t.Fatalf("expected blocked 1, got %d", summary.Blocked)
+	}
+	if summary.Allowed != 1 {
+		t.Fatalf("expected allowed 1, got %d", summary.Allowed)
+	}
+}
