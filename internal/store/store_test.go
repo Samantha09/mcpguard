@@ -382,3 +382,34 @@ func TestSQLiteStore_DeletePolicy(t *testing.T) {
 		t.Fatal("expected error after delete")
 	}
 }
+
+func TestSQLiteStore_UpsertPolicy_Update(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "old"})
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "new"})
+
+	got, err := s.GetPolicy(context.Background(), "p1")
+	if err != nil {
+		t.Fatalf("get policy failed: %v", err)
+	}
+	if got.Name != "new" {
+		t.Fatalf("expected new name, got %s", got.Name)
+	}
+}
+
+func TestSQLiteStore_UpsertPolicy_EmptyRuleIDs(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "a"})
+
+	got, err := s.GetPolicy(context.Background(), "p1")
+	if err != nil {
+		t.Fatalf("get policy failed: %v", err)
+	}
+	if got.RuleIDs != nil {
+		t.Fatalf("expected nil RuleIDs, got %v", got.RuleIDs)
+	}
+}

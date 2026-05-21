@@ -373,7 +373,15 @@ func (s *SQLiteStore) GetPolicy(ctx context.Context, id string) (*models.Policy,
 	if err != nil {
 		return nil, err
 	}
-	_ = json.Unmarshal([]byte(ruleIDsRaw), &p.RuleIDs)
+	if err := json.Unmarshal([]byte(ruleIDsRaw), &p.RuleIDs); err != nil {
+		return nil, fmt.Errorf("解析 rule_ids 失败: %w", err)
+	}
+	if createdAt.Valid {
+		p.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		p.UpdatedAt = updatedAt.Time
+	}
 	return &p, nil
 }
 
@@ -393,7 +401,15 @@ func (s *SQLiteStore) ListPolicies(ctx context.Context) ([]*models.Policy, error
 		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Enabled, &ruleIDsRaw, &p.LLMEnabled, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(ruleIDsRaw), &p.RuleIDs)
+		if err := json.Unmarshal([]byte(ruleIDsRaw), &p.RuleIDs); err != nil {
+			return nil, fmt.Errorf("解析 rule_ids 失败: %w", err)
+		}
+		if createdAt.Valid {
+			p.CreatedAt = createdAt.Time
+		}
+		if updatedAt.Valid {
+			p.UpdatedAt = updatedAt.Time
+		}
 		policies = append(policies, &p)
 	}
 	return policies, rows.Err()

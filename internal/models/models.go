@@ -73,12 +73,14 @@ type RPCError struct {
 
 // Policy 拦截策略
 type Policy struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Enabled     bool     `json:"enabled"`
-	RuleIDs     []string `json:"rule_ids"`    // 关联的规则 ID
-	LLMEnabled  bool     `json:"llm_enabled"` // 是否启用 LLM 检测
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Enabled     bool      `json:"enabled"`
+	RuleIDs     []string  `json:"rule_ids"`    // 关联的规则 ID
+	LLMEnabled  bool      `json:"llm_enabled"` // 是否启用 LLM 检测
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // LogEntry 审计日志条目
