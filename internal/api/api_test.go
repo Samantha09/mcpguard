@@ -254,3 +254,54 @@ func TestHandleUpdatePolicy_IDMismatch(t *testing.T) {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
+
+// --- Rule Tests ---
+
+func TestHandleListRules(t *testing.T) {
+	srv, s := newTestServer(t)
+	_ = s.CreateRule(context.Background(), &models.Rule{ID: "r1", Name: "a", Type: "keyword", Pattern: "x", Action: models.ActionBlock})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/rules", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var rules []models.Rule
+	if err := json.Unmarshal(w.Body.Bytes(), &rules); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+}
+
+func TestHandleCreateRule(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"id":"r1","name":"拦截 rm","type":"keyword","pattern":"rm -rf","action":"block","enabled":true}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/rules", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", w.Code)
+	}
+}
+
+func TestHandleCreateRule_Conflict(t *testing.T) {
+	srv, s := newTestServer(t)
+	_ = s.CreateRule(context.Background(), &models.Rule{ID: "r1", Name: "a", Type: "keyword", Pattern: "x", Action: models.ActionBlock})
+
+	body := `{"id":"r1","name":"b","type":"keyword","pattern":"y","action":"block","enabled":true}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/rules", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", w.Code)
+	}
+}

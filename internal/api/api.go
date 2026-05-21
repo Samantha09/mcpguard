@@ -171,6 +171,31 @@ func (s *Server) handleDeletePolicy(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (s *Server) handleListRules(c *gin.Context)     {}
-func (s *Server) handleCreateRule(c *gin.Context)    {}
+func (s *Server) handleListRules(c *gin.Context) {
+	rules, err := s.store.ListRules(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rules)
+}
+
+func (s *Server) handleCreateRule(c *gin.Context) {
+	var r models.Rule
+	if err := c.ShouldBindJSON(&r); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// 检查 ID 是否已存在
+	if _, err := s.store.GetRule(c.Request.Context(), r.ID); err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "rule already exists"})
+		return
+	}
+	if err := s.store.CreateRule(c.Request.Context(), &r); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, r)
+}
+
 func (s *Server) handleReportSummary(c *gin.Context) {}
