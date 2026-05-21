@@ -450,3 +450,22 @@ func TestSQLiteStore_QueryReportSummary(t *testing.T) {
 		t.Fatalf("unexpected top triggered rules: %+v", summary.TopTriggeredRules)
 	}
 }
+
+func TestSQLiteStore_QueryReportSummary_Empty(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	summary, err := s.QueryReportSummary(context.Background())
+	if err != nil {
+		t.Fatalf("query summary failed: %v", err)
+	}
+	if summary.TotalRequests != 0 {
+		t.Fatalf("expected total 0, got %d", summary.TotalRequests)
+	}
+	if summary.Blocked != 0 || summary.Warned != 0 || summary.Allowed != 0 {
+		t.Fatalf("expected all zero, got blocked=%d warned=%d allowed=%d", summary.Blocked, summary.Warned, summary.Allowed)
+	}
+	if len(summary.TopBlockedTools) != 0 || len(summary.TopTriggeredRules) != 0 {
+		t.Fatalf("expected empty top lists")
+	}
+}

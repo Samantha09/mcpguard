@@ -432,16 +432,16 @@ func (s *SQLiteStore) DeletePolicy(ctx context.Context, id string) error {
 func (s *SQLiteStore) QueryReportSummary(ctx context.Context) (*models.ReportSummary, error) {
 	summary := &models.ReportSummary{}
 
-	// action 统计
-	rows, err := s.db.QueryContext(ctx, `SELECT action, COUNT(*) FROM logs GROUP BY action`)
+	// action 统计（只统计 request 方向）
+	rows, err := s.db.QueryContext(ctx, `SELECT action, COUNT(*) FROM logs WHERE direction = 'request' GROUP BY action`)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var action string
 		var count int64
 		if err := rows.Scan(&action, &count); err != nil {
-			rows.Close()
 			return nil, err
 		}
 		summary.TotalRequests += count
@@ -454,23 +454,28 @@ func (s *SQLiteStore) QueryReportSummary(ctx context.Context) (*models.ReportSum
 			summary.Allowed = count
 		}
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	// top blocked tools
 	toolRows, err := s.db.QueryContext(ctx,
-		`SELECT tool_name, COUNT(*) FROM logs WHERE action = 'block' AND tool_name IS NOT NULL AND tool_name != '' GROUP BY tool_name ORDER BY COUNT(*) DESC LIMIT 5`)
+		`SELECT tool_name, COUNT(*) FROM logs WHERE action = ? AND tool_name IS NOT NULL AND tool_name != '' GROUP BY tool_name ORDER BY COUNT(*) DESC LIMIT 5`,
+		string(models.ActionBlock))
 	if err != nil {
 		return nil, err
 	}
+	defer toolRows.Close()
 	for toolRows.Next() {
 		var tc models.ToolCount
 		if err := toolRows.Scan(&tc.ToolName, &tc.Count); err != nil {
-			toolRows.Close()
 			return nil, err
 		}
 		summary.TopBlockedTools = append(summary.TopBlockedTools, tc)
 	}
-	toolRows.Close()
+	if err := toolRows.Err(); err != nil {
+		return nil, err
+	}
 
 	// top triggered rules
 	ruleRows, err := s.db.QueryContext(ctx,
@@ -478,15 +483,17 @@ func (s *SQLiteStore) QueryReportSummary(ctx context.Context) (*models.ReportSum
 	if err != nil {
 		return nil, err
 	}
+	defer ruleRows.Close()
 	for ruleRows.Next() {
 		var rc models.RuleCount
 		if err := ruleRows.Scan(&rc.RuleID, &rc.Count); err != nil {
-			ruleRows.Close()
 			return nil, err
 		}
 		summary.TopTriggeredRules = append(summary.TopTriggeredRules, rc)
 	}
-	ruleRows.Close()
+	if err := ruleRows.Err(); err != nil {
+		return nil, err
+	}
 
 	return summary, nil
 }
