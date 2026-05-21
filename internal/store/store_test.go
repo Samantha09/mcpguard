@@ -323,3 +323,62 @@ func TestSQLiteStore_UpdateAndDeleteRule(t *testing.T) {
 		t.Fatal("expected error after delete")
 	}
 }
+
+// --- Policy Tests ---
+
+func TestSQLiteStore_UpsertAndGetPolicy(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	policy := &models.Policy{
+		ID:          "policy-1",
+		Name:        "禁止删除",
+		Description: "拦截所有删除操作",
+		Enabled:     true,
+		RuleIDs:     []string{"rule-1", "rule-2"},
+		LLMEnabled:  false,
+	}
+	if err := s.UpsertPolicy(context.Background(), policy); err != nil {
+		t.Fatalf("upsert policy failed: %v", err)
+	}
+
+	got, err := s.GetPolicy(context.Background(), "policy-1")
+	if err != nil {
+		t.Fatalf("get policy failed: %v", err)
+	}
+	if got.Name != "禁止删除" {
+		t.Fatalf("expected name 禁止删除, got %s", got.Name)
+	}
+	if len(got.RuleIDs) != 2 {
+		t.Fatalf("expected 2 rule ids, got %d", len(got.RuleIDs))
+	}
+}
+
+func TestSQLiteStore_ListPolicies(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "a"})
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p2", Name: "b"})
+
+	policies, err := s.ListPolicies(context.Background())
+	if err != nil {
+		t.Fatalf("list policies failed: %v", err)
+	}
+	if len(policies) != 2 {
+		t.Fatalf("expected 2 policies, got %d", len(policies))
+	}
+}
+
+func TestSQLiteStore_DeletePolicy(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "a"})
+	_ = s.DeletePolicy(context.Background(), "p1")
+
+	_, err := s.GetPolicy(context.Background(), "p1")
+	if err == nil {
+		t.Fatal("expected error after delete")
+	}
+}

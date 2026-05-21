@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -119,6 +120,17 @@ CREATE TABLE IF NOT EXISTS rules (
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+	CREATE TABLE IF NOT EXISTS policies (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		description TEXT,
+		enabled BOOLEAN DEFAULT TRUE,
+		rule_ids TEXT,
+		llm_enabled BOOLEAN DEFAULT FALSE,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("创建表失败: %w", err)
@@ -339,14 +351,55 @@ func (s *SQLiteStore) DeleteRule(ctx context.Context, id string) error {
 }
 
 func (s *SQLiteStore) UpsertPolicy(ctx context.Context, policy *models.Policy) error {
-	return nil
+	ruleIDs, _ := json.Marshal(policy.RuleIDs)
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO policies (id, name, description, enabled, rule_ids, llm_enabled, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+			 name=excluded.name, description=excluded.description, enabled=excluded.enabled,
+			 rule_ids=excluded.rule_ids, llm_enabled=excluded.llm_enabled, updated_at=excluded.updated_at`,
+		policy.ID, policy.Name, policy.Description, policy.Enabled, string(ruleIDs), policy.LLMEnabled, time.Now(),
+	)
+	return err
 }
+
 func (s *SQLiteStore) GetPolicy(ctx context.Context, id string) (*models.Policy, error) {
-	return nil, nil
+	var p models.Policy
+	var ruleIDsRaw string
+	var createdAt, updatedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, name, description, enabled, rule_ids, llm_enabled, created_at, updated_at FROM policies WHERE id = ?`, id,
+	).Scan(&p.ID, &p.Name, &p.Description, &p.Enabled, &ruleIDsRaw, &p.LLMEnabled, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	_ = json.Unmarshal([]byte(ruleIDsRaw), &p.RuleIDs)
+	return &p, nil
 }
+
 func (s *SQLiteStore) ListPolicies(ctx context.Context) ([]*models.Policy, error) {
-	return nil, nil
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, description, enabled, rule_ids, llm_enabled, created_at, updated_at FROM policies ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var policies []*models.Policy
+	for rows.Next() {
+		var p models.Policy
+		var ruleIDsRaw string
+		var createdAt, updatedAt sql.NullTime
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Enabled, &ruleIDsRaw, &p.LLMEnabled, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(ruleIDsRaw), &p.RuleIDs)
+		policies = append(policies, &p)
+	}
+	return policies, rows.Err()
 }
+
 func (s *SQLiteStore) DeletePolicy(ctx context.Context, id string) error {
-	return nil
+	_, err := s.db.ExecContext(ctx, `DELETE FROM policies WHERE id = ?`, id)
+	return err
 }
