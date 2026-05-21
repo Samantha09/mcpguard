@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Samantha09/mcpguard/internal/models"
@@ -125,5 +126,110 @@ func TestHandleListLogs_Empty(t *testing.T) {
 	}
 	if len(logs) != 0 {
 		t.Fatalf("expected 0 logs, got %d", len(logs))
+	}
+}
+
+// --- Policy Tests ---
+
+func TestHandleListPolicies(t *testing.T) {
+	srv, s := newTestServer(t)
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "a"})
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p2", Name: "b"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/policies", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var policies []models.Policy
+	if err := json.Unmarshal(w.Body.Bytes(), &policies); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(policies) != 2 {
+		t.Fatalf("expected 2 policies, got %d", len(policies))
+	}
+}
+
+func TestHandleCreatePolicy(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"id":"p1","name":"禁止删除","enabled":true,"rule_ids":["r1"],"llm_enabled":false}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/policies", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", w.Code)
+	}
+}
+
+func TestHandleGetPolicy(t *testing.T) {
+	srv, s := newTestServer(t)
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "a"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/policies/p1", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var p models.Policy
+	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if p.ID != "p1" {
+		t.Fatalf("expected p1, got %s", p.ID)
+	}
+}
+
+func TestHandleGetPolicy_NotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/policies/notexist", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestHandleUpdatePolicy(t *testing.T) {
+	srv, s := newTestServer(t)
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "old"})
+
+	body := `{"id":"p1","name":"new","enabled":true}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PUT", "/api/policies/p1", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	got, _ := s.GetPolicy(context.Background(), "p1")
+	if got.Name != "new" {
+		t.Fatalf("expected new name, got %s", got.Name)
+	}
+}
+
+func TestHandleDeletePolicy(t *testing.T) {
+	srv, s := newTestServer(t)
+	_ = s.UpsertPolicy(context.Background(), &models.Policy{ID: "p1", Name: "a"})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("DELETE", "/api/policies/p1", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", w.Code)
+	}
+	_, err := s.GetPolicy(context.Background(), "p1")
+	if err == nil {
+		t.Fatal("expected policy deleted")
 	}
 }

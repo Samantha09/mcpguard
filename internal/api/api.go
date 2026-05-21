@@ -105,11 +105,65 @@ func (s *Server) handleListLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, logs)
 }
 
-func (s *Server) handleListPolicies(c *gin.Context)  {}
-func (s *Server) handleCreatePolicy(c *gin.Context)  {}
-func (s *Server) handleGetPolicy(c *gin.Context)     {}
-func (s *Server) handleUpdatePolicy(c *gin.Context)  {}
-func (s *Server) handleDeletePolicy(c *gin.Context)  {}
+func (s *Server) handleListPolicies(c *gin.Context) {
+	policies, err := s.store.ListPolicies(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, policies)
+}
+
+func (s *Server) handleCreatePolicy(c *gin.Context) {
+	var p models.Policy
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.store.UpsertPolicy(c.Request.Context(), &p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, p)
+}
+
+func (s *Server) handleGetPolicy(c *gin.Context) {
+	id := c.Param("id")
+	p, err := s.store.GetPolicy(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "policy not found"})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
+func (s *Server) handleUpdatePolicy(c *gin.Context) {
+	id := c.Param("id")
+	var p models.Policy
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if p.ID != "" && p.ID != id {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id mismatch"})
+		return
+	}
+	p.ID = id
+	if err := s.store.UpsertPolicy(c.Request.Context(), &p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
+func (s *Server) handleDeletePolicy(c *gin.Context) {
+	id := c.Param("id")
+	if err := s.store.DeletePolicy(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
 func (s *Server) handleListRules(c *gin.Context)     {}
 func (s *Server) handleCreateRule(c *gin.Context)    {}
 func (s *Server) handleReportSummary(c *gin.Context) {}
