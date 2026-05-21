@@ -135,3 +135,25 @@ type Rule struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
+
+// ReportSummary 安全报告汇总
+type ReportSummary struct {
+	TotalRequests     int64       `json:"total_requests"`
+	Blocked           int64       `json:"blocked"`
+	Warned            int64       `json:"warned"`
+	Allowed           int64       `json:"allowed"`
+	TopBlockedTools   []ToolCount `json:"top_blocked_tools"`
+	TopTriggeredRules []RuleCount `json:"top_triggered_rules"`
+}
+
+// ToolCount 工具统计项
+type ToolCount struct {
+	ToolName string `json:"tool_name"`
+	Count    int64  `json:"count"`
+}
+
+// RuleCount 规则统计项
+type RuleCount struct {
+	RuleID string `json:"rule_id"`
+	Count  int64  `json:"count"`
+}
