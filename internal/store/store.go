@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/Samantha09/mcpguard/internal/models"
 	_ "modernc.org/sqlite"
 )
+
+var ErrRuleExists = errors.New("rule already exists")
 
 // Store 存储接口
 type Store interface {
@@ -290,7 +293,13 @@ func (s *SQLiteStore) CreateRule(ctx context.Context, rule *models.Rule) error {
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		rule.ID, rule.Name, rule.Type, rule.Pattern, string(rule.Action), rule.Enabled, rule.Description, rule.Version,
 	)
-	return err
+	if err != nil {
+		if isUniqueConstraintError(err) {
+			return ErrRuleExists
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *SQLiteStore) GetRule(ctx context.Context, id string) (*models.Rule, error) {
@@ -418,4 +427,11 @@ func (s *SQLiteStore) ListPolicies(ctx context.Context) ([]*models.Policy, error
 func (s *SQLiteStore) DeletePolicy(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM policies WHERE id = ?`, id)
 	return err
+}
+
+func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

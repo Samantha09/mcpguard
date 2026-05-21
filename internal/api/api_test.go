@@ -289,6 +289,13 @@ func TestHandleCreateRule(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d", w.Code)
 	}
+	var resp models.Rule
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.ID != "r1" || resp.Name != "拦截 rm" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
 }
 
 func TestHandleCreateRule_Conflict(t *testing.T) {
@@ -303,5 +310,38 @@ func TestHandleCreateRule_Conflict(t *testing.T) {
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d", w.Code)
+	}
+}
+
+func TestHandleListRules_Empty(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/api/rules", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var rules []models.Rule
+	if err := json.Unmarshal(w.Body.Bytes(), &rules); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(rules) != 0 {
+		t.Fatalf("expected 0 rules, got %d", len(rules))
+	}
+}
+
+func TestHandleCreateRule_BadRequest(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	body := `{"id":"r1","name":"a"}` // 缺少必填字段 type / pattern / action
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/rules", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }

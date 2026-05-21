@@ -186,12 +186,15 @@ func (s *Server) handleCreateRule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// 检查 ID 是否已存在
-	if _, err := s.store.GetRule(c.Request.Context(), r.ID); err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "rule already exists"})
+	if r.Type == "" || r.Pattern == "" || r.Action == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing required fields: type, pattern, action"})
 		return
 	}
 	if err := s.store.CreateRule(c.Request.Context(), &r); err != nil {
+		if errors.Is(err, store.ErrRuleExists) {
+			c.JSON(http.StatusConflict, gin.H{"error": "rule already exists"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
