@@ -240,7 +240,9 @@ func (p *MCProxy) logRequest(raw string, req *models.InterceptedRequest, result 
 	// 上报到平台（异步，不阻塞）
 	if p.probeClient != nil {
 		go func() {
-			_ = p.probeClient.SendLog(entry)
+			if err := p.probeClient.SendLog(entry); err != nil {
+				_ = p.probeClient.SendLogHTTP(entry)
+			}
 		}()
 	}
 }

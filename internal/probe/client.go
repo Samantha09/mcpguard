@@ -117,7 +117,7 @@ func (c *Client) ConnectWebSocket(ctx context.Context) error {
 	return nil
 }
 
-// SendLog 通过 WebSocket 发送日志
+// SendLog 通过 WebSocket 发送日志（如未连接则返回错误）
 func (c *Client) SendLog(entry *models.LogEntry) error {
 	if c.wsConn == nil {
 		return fmt.Errorf("websocket not connected")
@@ -127,6 +127,28 @@ func (c *Client) SendLog(entry *models.LogEntry) error {
 		"data": entry,
 	}
 	return c.wsConn.WriteJSON(msg)
+}
+
+// SendLogHTTP 通过 HTTP API 上报日志（WebSocket 不可用时使用）
+func (c *Client) SendLogHTTP(entry *models.LogEntry) error {
+	body, _ := json.Marshal([]*models.LogEntry{entry})
+	req, err := http.NewRequest("POST",
+		c.platformAddr+"/api/v1/logs/batch", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("send log failed: %s", resp.Status)
+	}
+	return nil
 }
 
 // Close 关闭连接
