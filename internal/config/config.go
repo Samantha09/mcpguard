@@ -21,12 +21,15 @@ type AppConfig struct {
 
 	// API 服务配置
 	API APIConfig `json:"api"`
+
+	// 探针配置
+	Probe ProbeConfig `json:"probe"`
 }
 
 // LLMConfig LLM 检测配置
 type LLMConfig struct {
-	Enabled bool            `json:"enabled"`
-	Backend string          `json:"backend"` // "openai" | "ollama" | ...
+	Enabled bool             `json:"enabled"`
+	Backend string           `json:"backend"` // "openai" | "ollama" | ...
 	OpenAI  llm.OpenAIConfig `json:"openai"`
 }
 
@@ -34,6 +37,14 @@ type LLMConfig struct {
 type APIConfig struct {
 	Enabled bool   `json:"enabled"`
 	Listen  string `json:"listen"` // 如 ":9090"
+}
+
+// ProbeConfig 探针配置
+type ProbeConfig struct {
+	PlatformAddr string `json:"platform_addr"`
+	Token        string `json:"token"`
+	ProbeID      string `json:"probe_id"`
+	ProbeName    string `json:"probe_name"`
 }
 
 // DefaultConfig 返回默认配置
@@ -52,6 +63,7 @@ func DefaultConfig() *AppConfig {
 			Enabled: true,
 			Listen:  ":9090",
 		},
+		Probe: ProbeConfig{},
 	}
 }
 

@@ -2,8 +2,14 @@
 package api
 
 import (
-	"github.com/gin-gonic/gin"
+	"database/sql"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/Samantha09/mcpguard/internal/models"
 	"github.com/Samantha09/mcpguard/internal/store"
+	"github.com/gin-gonic/gin"
 )
 
 // Server API 服务
@@ -65,13 +71,141 @@ func (s *Server) Run(addr string) error {
 
 // 路由处理函数 — 后续实现
 
-func (s *Server) handleHealth(c *gin.Context)           {}
-func (s *Server) handleListLogs(c *gin.Context)         {}
-func (s *Server) handleListPolicies(c *gin.Context)     {}
-func (s *Server) handleCreatePolicy(c *gin.Context)     {}
-func (s *Server) handleGetPolicy(c *gin.Context)        {}
-func (s *Server) handleUpdatePolicy(c *gin.Context)     {}
-func (s *Server) handleDeletePolicy(c *gin.Context)     {}
-func (s *Server) handleListRules(c *gin.Context)        {}
-func (s *Server) handleCreateRule(c *gin.Context)       {}
-func (s *Server) handleReportSummary(c *gin.Context)    {}
+func (s *Server) handleHealth(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (s *Server) handleListLogs(c *gin.Context) {
+	filter := store.LogFilter{}
+
+	if action := c.Query("action"); action != "" {
+		a := models.Action(action)
+		filter.Action = &a
+	}
+	if method := c.Query("method"); method != "" {
+		filter.Method = method
+	}
+	if toolName := c.Query("tool_name"); toolName != "" {
+		filter.ToolName = toolName
+	}
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil {
+			filter.Limit = n
+		}
+	}
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if n, err := strconv.Atoi(offsetStr); err == nil {
+			filter.Offset = n
+		}
+	}
+
+	logs, err := s.store.QueryLogs(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
+}
+
+func (s *Server) handleListPolicies(c *gin.Context) {
+	policies, err := s.store.ListPolicies(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, policies)
+}
+
+func (s *Server) handleCreatePolicy(c *gin.Context) {
+	var p models.Policy
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.store.UpsertPolicy(c.Request.Context(), &p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, p)
+}
+
+func (s *Server) handleGetPolicy(c *gin.Context) {
+	id := c.Param("id")
+	p, err := s.store.GetPolicy(c.Request.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "policy not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
+func (s *Server) handleUpdatePolicy(c *gin.Context) {
+	id := c.Param("id")
+	var p models.Policy
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if p.ID != "" && p.ID != id {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id mismatch"})
+		return
+	}
+	p.ID = id
+	if err := s.store.UpsertPolicy(c.Request.Context(), &p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
+func (s *Server) handleDeletePolicy(c *gin.Context) {
+	id := c.Param("id")
+	if err := s.store.DeletePolicy(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (s *Server) handleListRules(c *gin.Context) {
+	rules, err := s.store.ListRules(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, rules)
+}
+
+func (s *Server) handleCreateRule(c *gin.Context) {
+	var r models.Rule
+	if err := c.ShouldBindJSON(&r); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if r.Type == "" || r.Pattern == "" || r.Action == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing required fields: type, pattern, action"})
+		return
+	}
+	if err := s.store.CreateRule(c.Request.Context(), &r); err != nil {
+		if errors.Is(err, store.ErrRuleExists) {
+			c.JSON(http.StatusConflict, gin.H{"error": "rule already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, r)
+}
+
+func (s *Server) handleReportSummary(c *gin.Context) {
+	summary, err := s.store.QueryReportSummary(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, summary)
+}

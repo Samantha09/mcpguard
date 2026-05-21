@@ -30,8 +30,40 @@ func (p *Pipeline) AddDetector(d Detector) {
 	p.detectors = append(p.detectors, d)
 }
 
-// Run 对请求依次执行所有检测器，任一返回 Block 则拦截
+// Run 对请求依次执行所有检测器，返回最严重的 Action（Block > Warn > Allow）
 func (p *Pipeline) Run(ctx context.Context, req *models.InterceptedRequest) (*models.DetectResult, error) {
-	// TODO: 实现
-	return &models.DetectResult{Action: models.ActionAllow}, nil
+	var final *models.DetectResult
+	for _, d := range p.detectors {
+		result, err := d.Detect(ctx, req)
+		if err != nil {
+			continue
+		}
+		if result == nil {
+			continue
+		}
+		if final == nil || severity(result.Action) > severity(final.Action) {
+			final = result
+		}
+		if result.Action == models.ActionBlock {
+			break
+		}
+	}
+	if final == nil {
+		return &models.DetectResult{Action: models.ActionAllow}, nil
+	}
+	return final, nil
+}
+
+// severity 返回 Action 的严重程度等级
+func severity(a models.Action) int {
+	switch a {
+	case models.ActionBlock:
+		return 3
+	case models.ActionWarn:
+		return 2
+	case models.ActionAllow:
+		return 1
+	default:
+		return 0
+	}
 }
